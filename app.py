@@ -9,7 +9,7 @@ st.set_page_config(page_title="Procesador PDM Tambo", layout="wide")
 st.title("Procesador de Ventas PDM")
 st.write("Sube el reporte de caja (PDF) para extraer los datos y descargar el Excel.")
 
-# Diccionario para traducir códigos a nombres de los vendedores
+# Diccionario de vendedores
 NOMBRES_VENDEDORES = {
     "T72758473": "Britney",
     "T70729978": "Jhony",
@@ -24,13 +24,14 @@ def limpiar_texto(texto):
     texto = re.sub(r'\s+', ' ', texto)
     return texto.strip()
 
+# Lista de palabras clave optimizada
 LISTA_PDM = {
     "Papas Lays Clásicas": ["lays", "clasicas"],
     "Doritos Queso Atrevido": ["doritos", "atrevido"],
     "Mix Piqueo Snax": ["piqueo", "snax"],
     "Chocman Doble Manjar": ["chocman", "doble"],
     "Gomitas Ambrosia": ["ambrosia"],
-    "BonoBn": ["bonobn"],
+    "Bon o Bon": ["bon", "o", "bon"], 
     "Mogul Pastillas Frutales": ["mogul", "pastilla"],
     "Mogul Sandía": ["mogul", "sandia"],
     "Jelly Beans Extreme": ["jelly", "beans"],
@@ -51,60 +52,57 @@ archivo_pdf = st.file_uploader("Sube tu archivo de Reporte (PDF)", type=["pdf"])
 if archivo_pdf is not None:
     st.info("Procesando reporte de caja... Esto puede tomar unos segundos.")
     
-    # Ahora usamos un diccionario para asegurar que cada Trns sea único y no se pierdan datos por saltos de página
-    transacciones_dict = {}
-    trx_actual_id = None
-    fecha_reporte = "Sin Fecha"
-    
     with pdfplumber.open(archivo_pdf) as pdf:
+        texto_completo = ""
         for page in pdf.pages:
-            texto = page.extract_text(layout=True) or page.extract_text()
-            if texto:
-                # Extraer fecha
-                if fecha_reporte == "Sin Fecha":
-                    match_fecha = re.search(r'(\d{2}/\d{2}/\d{4})', texto)
-                    if match_fecha:
-                        fecha_reporte = match_fecha.group(1)
+            texto_completo += (page.extract_text() or "") + "\n"
+            
+    # Extraer la fecha del reporte
+    fecha_reporte = "Sin Fecha"
+    match_fecha = re.search(r'(\d{2}/\d{2}/\d{4})', texto_completo)
+    if match_fecha:
+        fecha_reporte = match_fecha.group(1)
 
-                for linea in texto.split('\n'):
-                    linea_basica = linea.strip().lower()
-                    
-                    # Buscar el inicio estricto de una transacción por su número de Trns
-                    match_nueva_trx = re.match(r'^(\d{1,6})\s+(\d{5,8})\b', linea_basica)
-                    
-                    if match_nueva_trx:
-                        trx_actual_id = match_nueva_trx.group(1)
-                        # Si el Trns es nuevo, creamos su espacio en el diccionario
-                        if trx_actual_id not in transacciones_dict:
-                            transacciones_dict[trx_actual_id] = {'texto_lineas': [], 'vendedor': 'Desconocido'}
-                            
-                    # Si ya estamos dentro de un Trns, agrupamos sus datos sin importar en qué página esté
-                    if trx_actual_id:
-                        transacciones_dict[trx_actual_id]['texto_lineas'].append(linea_basica)
-                        # Buscamos al vendedor si aún no lo tenemos registrado en esta transacción
-                        if transacciones_dict[trx_actual_id]['vendedor'] == "Desconocido":
-                            match_vendedor = re.search(r'\b(t\d{8})\b', linea_basica)
-                            if match_vendedor:
-                                transacciones_dict[trx_actual_id]['vendedor'] = match_vendedor.group(1).upper()
+    # NUEVO CEREBRO: Separa todo el texto palabra por palabra ignorando el formato
+    tokens = [t for t in re.split(r'\s+|\|', texto_completo) if t]
+    
+    transacciones_dict = {}
+    current_trx = None
+    
+    for i, token in enumerate(tokens):
+        # Detecta el Trns: Es un número de 3 a 6 dígitos seguido inmediatamente por un Código de Artículo (7 a 9 dígitos)
+        if re.match(r'^\d{3,6}$', token):
+            if i + 1 < len(tokens) and re.match(r'^\d{7,9}$', tokens[i+1]):
+                current_trx = token
+                transacciones_dict[current_trx] = []
+                
+        # Agrupa toda la data dentro de su número de Trns
+        if current_trx:
+            transacciones_dict[current_trx].append(token)
 
     if not transacciones_dict:
         st.error("No se detectaron transacciones. Verifica el formato del PDF.")
     else:
         datos_finales = []
         
-        # Procesamos cada transacción de forma individual y segura
-        for trns_id, data in transacciones_dict.items():
-            texto_trx_limpio = limpiar_texto(" ".join(data['texto_lineas']))
-            pdms_en_boleta = set()
+        for trns_id, tokens_trx in transacciones_dict.items():
+            texto_trx_limpio = limpiar_texto(" ".join(tokens_trx))
             
+            # Buscar al vendedor dentro de la transacción
+            cod_vendedor = "Desconocido"
+            for t in tokens_trx:
+                if re.match(r'^T\d{8}$', t, re.IGNORECASE):
+                    cod_vendedor = t.upper()
+                    break
+                    
+            nombre_vendedor = NOMBRES_VENDEDORES.get(cod_vendedor, cod_vendedor)
+            
+            # Buscar PDMs
+            pdms_en_boleta = set()
             for pdm_nombre, palabras_clave in LISTA_PDM.items():
                 if all(palabra in texto_trx_limpio for palabra in palabras_clave):
                     pdms_en_boleta.add(pdm_nombre)
-            
-            # Traducir código al nombre real
-            cod_vendedor = data['vendedor']
-            nombre_vendedor = NOMBRES_VENDEDORES.get(cod_vendedor, cod_vendedor)
-            
+                    
             datos_finales.append({
                 "Trns_ID": trns_id,
                 "Vendedor": nombre_vendedor,
@@ -113,19 +111,18 @@ if archivo_pdf is not None:
             
         df = pd.DataFrame(datos_finales)
         
-        # Agrupamos los datos separando por vendedor
+        # Agrupación exacta por vendedor
         df_vendedores = df.groupby('Vendedor').agg(
             Total_Transacciones=('Contiene_PDM', 'count'),
             PDM=('Contiene_PDM', 'sum')
         ).reset_index()
         
-        # Calculamos los totales absolutos de la caja
         total_trx_dia = df_vendedores['Total_Transacciones'].sum()
         total_pdm_dia = df_vendedores['PDM'].sum()
         
         filas_excel = []
         
-        # 1. Agregamos primero la fila del TOTAL CAJA general
+        # 1. Fila de TOTAL CAJA
         filas_excel.append({
             "Fecha": fecha_reporte,
             "Total Transacciones": total_trx_dia,
@@ -134,7 +131,7 @@ if archivo_pdf is not None:
             "Vendedor Responsable": "TOTAL CAJA"
         })
         
-        # 2. Agregamos las filas separadas por cada vendedor que operó ese día
+        # 2. Filas divididas por Vendedor
         for index, row in df_vendedores.iterrows():
             filas_excel.append({
                 "Fecha": fecha_reporte,
@@ -146,7 +143,7 @@ if archivo_pdf is not None:
             
         df_excel = pd.DataFrame(filas_excel)
         
-        # Generar archivo Excel con estilos
+        # Generar Excel final
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
             df_excel.to_excel(writer, sheet_name="Reporte PDM", index=False, header=False, startrow=1)
@@ -159,18 +156,15 @@ if archivo_pdf is not None:
             formato_verde_porcentaje = workbook.add_format({'bg_color': '#32CD32', 'num_format': '0.0%', 'align': 'center', 'border': 1})
             formato_blanco_centro = workbook.add_format({'align': 'center', 'border': 1})
             
-            # Anchos de columna
             worksheet.set_column('A:A', 12)
             worksheet.set_column('B:B', 20)
             worksheet.set_column('C:C', 10)
             worksheet.set_column('D:D', 15)
             worksheet.set_column('E:E', 25)
             
-            # Pintar Cabeceras
             for col_num, value in enumerate(df_excel.columns.values):
                 worksheet.write(0, col_num, value, formato_cabecera)
                 
-            # Pintar las filas
             for row_num in range(len(df_excel)):
                 worksheet.write(row_num + 1, 0, df_excel.iloc[row_num, 0], formato_blanco_centro)
                 worksheet.write(row_num + 1, 1, df_excel.iloc[row_num, 1], formato_verde)
