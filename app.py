@@ -52,59 +52,90 @@ archivo_pdf = st.file_uploader("Sube tu archivo de Reporte (PDF)", type=["pdf"])
 if archivo_pdf is not None:
     st.info("Procesando reporte de caja... Esto puede tomar unos segundos.")
     
-    with pdfplumber.open(archivo_pdf) as pdf:
-        texto_completo = ""
-        for page in pdf.pages:
-            texto_completo += (page.extract_text() or "") + "\n"
-            
-    # Extraer la fecha del reporte
+    transacciones_lista = []
+    current_trx_data = None
+    in_table = False
     fecha_reporte = "Sin Fecha"
-    match_fecha = re.search(r'(\d{2}/\d{2}/\d{4})', texto_completo)
-    if match_fecha:
-        fecha_reporte = match_fecha.group(1)
+    
+    with pdfplumber.open(archivo_pdf) as pdf:
+        for page in pdf.pages:
+            # Usamos layout=True para que el programa mantenga visualmente las columnas
+            texto = page.extract_text(layout=True)
+            if not texto: continue
+            
+            # Extraer la fecha (solo la primera vez que la encuentra)
+            if fecha_reporte == "Sin Fecha":
+                match_fecha = re.search(r'(\d{2}/\d{2}/\d{4})', texto)
+                if match_fecha:
+                    fecha_reporte = match_fecha.group(1)
 
-    # NUEVO CEREBRO: Separa todo el texto palabra por palabra ignorando el formato
-    tokens = [t for t in re.split(r'\s+|\|', texto_completo) if t]
-    
-    transacciones_dict = {}
-    current_trx = None
-    
-    for i, token in enumerate(tokens):
-        # Detecta el Trns: Es un número de 3 a 6 dígitos seguido inmediatamente por un Código de Artículo (7 a 9 dígitos)
-        if re.match(r'^\d{3,6}$', token):
-            if i + 1 < len(tokens) and re.match(r'^\d{7,9}$', tokens[i+1]):
-                current_trx = token
-                transacciones_dict[current_trx] = []
+            # Analizamos línea por línea
+            for linea in texto.split('\n'):
+                linea_lower = linea.lower()
                 
-        # Agrupa toda la data dentro de su número de Trns
-        if current_trx:
-            transacciones_dict[current_trx].append(token)
+                # Detectamos dónde empieza realmente la tabla para no contar resúmenes
+                if "trns" in linea_lower and ("art" in linea_lower or "desc" in linea_lower):
+                    in_table = True
+                    continue
+                    
+                if not in_table:
+                    continue
+                    
+                # NUEVO CEREBRO: Busca de 1 a 6 números anclados en el extremo izquierdo de la fila.
+                # Ignorará por completo las cantidades o códigos de producto porque están a la derecha.
+                match_trx = re.match(r'^ {0,4}(\d{1,6})(?:\s+|$)', linea)
+                
+                if match_trx:
+                    # Si ya estábamos procesando una transacción, la guardamos antes de iniciar la nueva
+                    if current_trx_data is not None:
+                        transacciones_lista.append(current_trx_data)
+                        
+                    # Iniciamos la nueva transacción
+                    current_trx_data = {
+                        'id': match_trx.group(1), 
+                        'texto_lineas': [linea], 
+                        'vendedor': 'Desconocido'
+                    }
+                    
+                    # Buscamos al vendedor en esta primera línea
+                    match_vendedor = re.search(r'\b(t\d{8})\b', linea_lower)
+                    if match_vendedor:
+                        current_trx_data['vendedor'] = match_vendedor.group(1).upper()
+                        
+                elif current_trx_data is not None:
+                    # Si no es inicio de Trns, la línea pertenece a la transacción actual (artículos)
+                    current_trx_data['texto_lineas'].append(linea)
+                    # Si aún no tenemos vendedor, seguimos buscando
+                    if current_trx_data['vendedor'] == 'Desconocido':
+                        match_vendedor = re.search(r'\b(t\d{8})\b', linea_lower)
+                        if match_vendedor:
+                            current_trx_data['vendedor'] = match_vendedor.group(1).upper()
 
-    if not transacciones_dict:
+    # Guardar la última transacción cuando se acaba el documento
+    if current_trx_data is not None:
+        transacciones_lista.append(current_trx_data)
+
+    if not transacciones_lista:
         st.error("No se detectaron transacciones. Verifica el formato del PDF.")
     else:
         datos_finales = []
         
-        for trns_id, tokens_trx in transacciones_dict.items():
-            texto_trx_limpio = limpiar_texto(" ".join(tokens_trx))
-            
-            # Buscar al vendedor dentro de la transacción
-            cod_vendedor = "Desconocido"
-            for t in tokens_trx:
-                if re.match(r'^T\d{8}$', t, re.IGNORECASE):
-                    cod_vendedor = t.upper()
-                    break
-                    
-            nombre_vendedor = NOMBRES_VENDEDORES.get(cod_vendedor, cod_vendedor)
+        for data in transacciones_lista:
+            # Unimos todas las líneas de la transacción y limpiamos el texto
+            texto_trx_limpio = limpiar_texto(" ".join(data['texto_lineas']))
             
             # Buscar PDMs
             pdms_en_boleta = set()
             for pdm_nombre, palabras_clave in LISTA_PDM.items():
                 if all(palabra in texto_trx_limpio for palabra in palabras_clave):
                     pdms_en_boleta.add(pdm_nombre)
-                    
+            
+            # Traducir código al nombre real
+            cod_vendedor = data['vendedor']
+            nombre_vendedor = NOMBRES_VENDEDORES.get(cod_vendedor, cod_vendedor)
+            
             datos_finales.append({
-                "Trns_ID": trns_id,
+                "Trns_ID": data['id'],
                 "Vendedor": nombre_vendedor,
                 "Contiene_PDM": 1 if len(pdms_en_boleta) > 0 else 0
             })
@@ -143,7 +174,7 @@ if archivo_pdf is not None:
             
         df_excel = pd.DataFrame(filas_excel)
         
-        # Generar Excel final
+        # Generar Excel final con formato visual
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
             df_excel.to_excel(writer, sheet_name="Reporte PDM", index=False, header=False, startrow=1)
@@ -174,7 +205,7 @@ if archivo_pdf is not None:
                 
         excel_data = output.getvalue()
         
-        st.success(f"Analisis completado. Se detectaron {total_trx_dia} transacciones exactas.")
+        st.success(f"Analisis completado. Se detectaron exactamente {total_trx_dia} transacciones.")
         st.download_button(
             label="Descargar Reporte en Excel",
             data=excel_data,
