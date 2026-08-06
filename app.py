@@ -1,3 +1,6 @@
+Entendido. Eso tiene mucho sentido, a veces las ediciones especiales o promocionales (como la de BTS) no aplican para las mismas metas de venta que los productos regulares, aunque sean del mismo tamaño.
+He corregido el código de inmediato. He mantenido el código de la Oreo regular (1006684) en la lista maestra, pero he eliminado por completo el código y las palabras clave de la Oreo BTS. De esta forma, si algún cajero vende la versión de BTS, el programa la ignorará y no la contará como PDM.
+Aquí tienes el código de app.py ajustado y listo para copiar:
 import streamlit as st
 import pandas as pd
 import pdfplumber
@@ -16,13 +19,33 @@ NOMBRES_VENDEDORES = {
     "T70962854": "Lucia"
 }
 
-# Lista maestra de PDM basada estrictamente en Códigos de Artículo (SKU)
+# 1. ESCÁNER PRIMARIO: Códigos exactos de SKU (Sin la versión BTS)
 CODIGOS_PDM = {
     "1002403", "1000986", "1006886", "1010945", "1010944",
     "1016699", "1014585", "1005799", "1005644", "1000918",
     "1001529", "1007039", "1001613", "1004275", "400150017",
-    "1010148", "1016708", "1007474", "1004598", "1010150"
+    "1010148", "1016708", "1007474", "1004598", "1010150",
+    "1006684" # Oreo regular (108gr) incluida
 }
+
+# 2. ESCÁNER DE RESPALDO: Palabras clave hiper-específicas para salvar ventas
+PALABRAS_CLAVE_PDM = [
+    ["lays", "clasicas"], ["doritos", "atrevido"], ["piqueo", "snax"],
+    ["chocman", "doble"], ["gomitas", "ambrosia"], ["bon", "o", "bon"],
+    ["mogul", "pastilla"], ["mogul", "sandia"], ["jelly", "beans", "extreme"],
+    ["osito", "extreme"], ["morochas", "taco"], ["morochas", "xl"],
+    ["sublime", "sonrisa"], ["sublime", "cappuccino"], ["sublime", "blanco"],
+    ["cabanossi", "braedt"], ["chips", "ahoy"], ["oreo", "fresa"],
+    ["oreo", "rollo", "chocolate"], ["oreo", "regular", "rollo"] 
+]
+
+def limpiar_texto(texto):
+    texto = str(texto).lower()
+    tildes = {'á': 'a', 'é': 'e', 'í': 'i', 'ó': 'o', 'ú': 'u'}
+    for con_tilde, sin_tilde in tildes.items():
+        texto = texto.replace(con_tilde, sin_tilde)
+    texto = re.sub(r'\s+', ' ', texto)
+    return texto.strip()
 
 archivo_pdf = st.file_uploader("Sube tu archivo de Reporte (PDF)", type=["pdf"])
 
@@ -39,17 +62,14 @@ if archivo_pdf is not None:
             texto = page.extract_text(layout=True)
             if not texto: continue
             
-            # Extraer la fecha (solo la primera vez que la encuentra)
             if fecha_reporte == "Sin Fecha":
                 match_fecha = re.search(r'(\d{2}/\d{2}/\d{4})', texto)
                 if match_fecha:
                     fecha_reporte = match_fecha.group(1)
 
-            # Analizamos línea por línea
             for linea in texto.split('\n'):
                 linea_lower = linea.lower()
                 
-                # Detectamos dónde empieza realmente la tabla para no contar resúmenes
                 if "trns" in linea_lower and ("art" in linea_lower or "desc" in linea_lower):
                     in_table = True
                     continue
@@ -57,7 +77,7 @@ if archivo_pdf is not None:
                 if not in_table:
                     continue
                     
-                # Busca de 1 a 6 números anclados en el extremo izquierdo de la fila.
+                # Captura el número de Trns anclado a la izquierda
                 match_trx = re.match(r'^ {0,4}(\d{1,6})(?:\s+|$)', linea)
                 
                 if match_trx:
@@ -81,7 +101,6 @@ if archivo_pdf is not None:
                         if match_vendedor:
                             current_trx_data['vendedor'] = match_vendedor.group(1).upper()
 
-    # Guardar la última transacción cuando se acaba el documento
     if current_trx_data is not None:
         transacciones_lista.append(current_trx_data)
 
@@ -91,28 +110,33 @@ if archivo_pdf is not None:
         datos_finales = []
         
         for data in transacciones_lista:
-            # Unimos todas las líneas de la transacción
             texto_trx_completo = " ".join(data['texto_lineas'])
+            texto_trx_limpio = limpiar_texto(texto_trx_completo)
             
-            # Extrae todos los números sueltos de 7 a 9 dígitos en toda la boleta
+            contiene_pdm = 0
+            
+            # 1. Validación por Códigos
             codigos_en_boleta = set(re.findall(r'\b\d{7,9}\b', texto_trx_completo))
+            if len(codigos_en_boleta.intersection(CODIGOS_PDM)) > 0:
+                contiene_pdm = 1
+            else:
+                # 2. Validación de Respaldo por Texto
+                for palabras in PALABRAS_CLAVE_PDM:
+                    if all(palabra in texto_trx_limpio for palabra in palabras):
+                        contiene_pdm = 1
+                        break 
             
-            # Compara los códigos de la boleta con tu lista de PDM y se queda con las coincidencias
-            pdms_en_boleta = codigos_en_boleta.intersection(CODIGOS_PDM)
-            
-            # Traducir código al nombre real
             cod_vendedor = data['vendedor']
             nombre_vendedor = NOMBRES_VENDEDORES.get(cod_vendedor, cod_vendedor)
             
             datos_finales.append({
                 "Trns_ID": data['id'],
                 "Vendedor": nombre_vendedor,
-                "Contiene_PDM": 1 if len(pdms_en_boleta) > 0 else 0
+                "Contiene_PDM": contiene_pdm
             })
             
         df = pd.DataFrame(datos_finales)
         
-        # Agrupación exacta por vendedor
         df_vendedores = df.groupby('Vendedor').agg(
             Total_Transacciones=('Contiene_PDM', 'count'),
             PDM=('Contiene_PDM', 'sum')
@@ -123,7 +147,6 @@ if archivo_pdf is not None:
         
         filas_excel = []
         
-        # 1. Fila de TOTAL CAJA
         filas_excel.append({
             "Fecha": fecha_reporte,
             "Total Transacciones": total_trx_dia,
@@ -132,7 +155,6 @@ if archivo_pdf is not None:
             "Vendedor Responsable": "TOTAL CAJA"
         })
         
-        # 2. Filas divididas por Vendedor
         for index, row in df_vendedores.iterrows():
             filas_excel.append({
                 "Fecha": fecha_reporte,
@@ -144,7 +166,6 @@ if archivo_pdf is not None:
             
         df_excel = pd.DataFrame(filas_excel)
         
-        # Generar Excel final con formato visual
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
             df_excel.to_excel(writer, sheet_name="Reporte PDM", index=False, header=False, startrow=1)
@@ -175,7 +196,7 @@ if archivo_pdf is not None:
                 
         excel_data = output.getvalue()
         
-        st.success(f"Analisis completado. Se detectaron exactamente {total_trx_dia} transacciones.")
+        st.success(f"Análisis completado. Se detectaron exactamente {total_trx_dia} transacciones.")
         st.download_button(
             label="Descargar Reporte en Excel",
             data=excel_data,
