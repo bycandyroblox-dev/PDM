@@ -16,35 +16,12 @@ NOMBRES_VENDEDORES = {
     "T70962854": "Lucia"
 }
 
-def limpiar_texto(texto):
-    texto = str(texto).lower()
-    tildes = {'á': 'a', 'é': 'e', 'í': 'i', 'ó': 'o', 'ú': 'u'}
-    for con_tilde, sin_tilde in tildes.items():
-        texto = texto.replace(con_tilde, sin_tilde)
-    texto = re.sub(r'\s+', ' ', texto)
-    return texto.strip()
-
-# Lista de palabras clave optimizada
-LISTA_PDM = {
-    "Papas Lays Clásicas": ["lays", "clasicas"],
-    "Doritos Queso Atrevido": ["doritos", "atrevido"],
-    "Mix Piqueo Snax": ["piqueo", "snax"],
-    "Chocman Doble Manjar": ["chocman", "doble"],
-    "Gomitas Ambrosia": ["ambrosia"],
-    "Bon o Bon": ["bon", "o", "bon"], 
-    "Mogul Pastillas Frutales": ["mogul", "pastilla"],
-    "Mogul Sandía": ["mogul", "sandia"],
-    "Jelly Beans Extreme": ["jelly", "beans"],
-    "Osito Extreme": ["osito", "extreme"],
-    "Morochas XL": ["morochas", "xl"],
-    "Sublime Sonrisa": ["sublime", "sonrisa"],
-    "Cappuccino 37gr": ["cappuccino", "37"],
-    "Blanco 40gr": ["blanco", "40"],
-    "Cabanossi Braedt": ["cabanossi"],
-    "Chips Ahoy": ["chips", "ahoy"],
-    "Oreo Fresa": ["oreo", "fresa"],
-    "Chocolate 108gr": ["chocolate", "108"],
-    "Regular Rollo 135gr": ["regular", "rollo"]
+# Nueva lista de PDM basada estrictamente en Códigos de Artículo
+CODIGOS_PDM = {
+    "1002403", "1000986", "1006886", "1010945", "1010944",
+    "1016699", "1014585", "1005799", "1005644", "1000918",
+    "1001529", "1007039", "1001613", "1004275", "400150017",
+    "1010148", "1016708"
 }
 
 archivo_pdf = st.file_uploader("Sube tu archivo de Reporte (PDF)", type=["pdf"])
@@ -59,7 +36,6 @@ if archivo_pdf is not None:
     
     with pdfplumber.open(archivo_pdf) as pdf:
         for page in pdf.pages:
-            # Usamos layout=True para que el programa mantenga visualmente las columnas
             texto = page.extract_text(layout=True)
             if not texto: continue
             
@@ -81,31 +57,25 @@ if archivo_pdf is not None:
                 if not in_table:
                     continue
                     
-                # NUEVO CEREBRO: Busca de 1 a 6 números anclados en el extremo izquierdo de la fila.
-                # Ignorará por completo las cantidades o códigos de producto porque están a la derecha.
+                # Busca de 1 a 6 números anclados en el extremo izquierdo de la fila.
                 match_trx = re.match(r'^ {0,4}(\d{1,6})(?:\s+|$)', linea)
                 
                 if match_trx:
-                    # Si ya estábamos procesando una transacción, la guardamos antes de iniciar la nueva
                     if current_trx_data is not None:
                         transacciones_lista.append(current_trx_data)
                         
-                    # Iniciamos la nueva transacción
                     current_trx_data = {
                         'id': match_trx.group(1), 
                         'texto_lineas': [linea], 
                         'vendedor': 'Desconocido'
                     }
                     
-                    # Buscamos al vendedor en esta primera línea
                     match_vendedor = re.search(r'\b(t\d{8})\b', linea_lower)
                     if match_vendedor:
                         current_trx_data['vendedor'] = match_vendedor.group(1).upper()
                         
                 elif current_trx_data is not None:
-                    # Si no es inicio de Trns, la línea pertenece a la transacción actual (artículos)
                     current_trx_data['texto_lineas'].append(linea)
-                    # Si aún no tenemos vendedor, seguimos buscando
                     if current_trx_data['vendedor'] == 'Desconocido':
                         match_vendedor = re.search(r'\b(t\d{8})\b', linea_lower)
                         if match_vendedor:
@@ -121,14 +91,14 @@ if archivo_pdf is not None:
         datos_finales = []
         
         for data in transacciones_lista:
-            # Unimos todas las líneas de la transacción y limpiamos el texto
-            texto_trx_limpio = limpiar_texto(" ".join(data['texto_lineas']))
+            # Unimos todas las líneas de la transacción
+            texto_trx_completo = " ".join(data['texto_lineas'])
             
-            # Buscar PDMs
-            pdms_en_boleta = set()
-            for pdm_nombre, palabras_clave in LISTA_PDM.items():
-                if all(palabra in texto_trx_limpio for palabra in palabras_clave):
-                    pdms_en_boleta.add(pdm_nombre)
+            # NUEVO CEREBRO: Extrae todos los números sueltos de 7 a 9 dígitos
+            codigos_en_boleta = set(re.findall(r'\b\d{7,9}\b', texto_trx_completo))
+            
+            # Compara los códigos de la boleta con tu lista de PDM y se queda con las coincidencias
+            pdms_en_boleta = codigos_en_boleta.intersection(CODIGOS_PDM)
             
             # Traducir código al nombre real
             cod_vendedor = data['vendedor']
