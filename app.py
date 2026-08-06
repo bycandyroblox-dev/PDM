@@ -1,6 +1,3 @@
-Entendido. Eso tiene mucho sentido, a veces las ediciones especiales o promocionales (como la de BTS) no aplican para las mismas metas de venta que los productos regulares, aunque sean del mismo tamaño.
-He corregido el código de inmediato. He mantenido el código de la Oreo regular (1006684) en la lista maestra, pero he eliminado por completo el código y las palabras clave de la Oreo BTS. De esta forma, si algún cajero vende la versión de BTS, el programa la ignorará y no la contará como PDM.
-Aquí tienes el código de app.py ajustado y listo para copiar:
 import streamlit as st
 import pandas as pd
 import pdfplumber
