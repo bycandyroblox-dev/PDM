@@ -16,12 +16,12 @@ NOMBRES_VENDEDORES = {
     "T70962854": "Lucia"
 }
 
-# Nueva lista de PDM basada estrictamente en Códigos de Artículo
+# Lista maestra de PDM basada estrictamente en Códigos de Artículo (SKU)
 CODIGOS_PDM = {
     "1002403", "1000986", "1006886", "1010945", "1010944",
     "1016699", "1014585", "1005799", "1005644", "1000918",
     "1001529", "1007039", "1001613", "1004275", "400150017",
-    "1010148", "1016708"
+    "1010148", "1016708", "1007474", "1004598", "1010150"
 }
 
 archivo_pdf = st.file_uploader("Sube tu archivo de Reporte (PDF)", type=["pdf"])
@@ -94,7 +94,7 @@ if archivo_pdf is not None:
             # Unimos todas las líneas de la transacción
             texto_trx_completo = " ".join(data['texto_lineas'])
             
-            # NUEVO CEREBRO: Extrae todos los números sueltos de 7 a 9 dígitos
+            # Extrae todos los números sueltos de 7 a 9 dígitos en toda la boleta
             codigos_en_boleta = set(re.findall(r'\b\d{7,9}\b', texto_trx_completo))
             
             # Compara los códigos de la boleta con tu lista de PDM y se queda con las coincidencias
