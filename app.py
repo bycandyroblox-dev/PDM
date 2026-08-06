@@ -16,7 +16,7 @@ NOMBRES_VENDEDORES = {
     "T70962854": "Lucia"
 }
 
-# 1. ESCÁNER PRIMARIO: Códigos exactos de SKU (Sin la versión BTS)
+# ESCÁNER ÚNICO: Códigos exactos de SKU
 CODIGOS_PDM = {
     "1002403", "1000986", "1006886", "1010945", "1010944",
     "1016699", "1014585", "1005799", "1005644", "1000918",
@@ -24,25 +24,6 @@ CODIGOS_PDM = {
     "1010148", "1016708", "1007474", "1004598", "1010150",
     "1006684" # Oreo regular (108gr) incluida
 }
-
-# 2. ESCÁNER DE RESPALDO: Palabras clave hiper-específicas para salvar ventas
-PALABRAS_CLAVE_PDM = [
-    ["lays", "clasicas"], ["doritos", "atrevido"], ["piqueo", "snax"],
-    ["chocman", "doble"], ["gomitas", "ambrosia"], ["bon", "o", "bon"],
-    ["mogul", "pastilla"], ["mogul", "sandia"], ["jelly", "beans", "extreme"],
-    ["osito", "extreme"], ["morochas", "taco"], ["morochas", "xl"],
-    ["sublime", "sonrisa"], ["sublime", "cappuccino"], ["sublime", "blanco"],
-    ["cabanossi", "braedt"], ["chips", "ahoy"], ["oreo", "fresa"],
-    ["oreo", "rollo", "chocolate"], ["oreo", "regular", "rollo"] 
-]
-
-def limpiar_texto(texto):
-    texto = str(texto).lower()
-    tildes = {'á': 'a', 'é': 'e', 'í': 'i', 'ó': 'o', 'ú': 'u'}
-    for con_tilde, sin_tilde in tildes.items():
-        texto = texto.replace(con_tilde, sin_tilde)
-    texto = re.sub(r'\s+', ' ', texto)
-    return texto.strip()
 
 archivo_pdf = st.file_uploader("Sube tu archivo de Reporte (PDF)", type=["pdf"])
 
@@ -67,6 +48,7 @@ if archivo_pdf is not None:
             for linea in texto.split('\n'):
                 linea_lower = linea.lower()
                 
+                # Detectamos dónde empieza realmente la tabla
                 if "trns" in linea_lower and ("art" in linea_lower or "desc" in linea_lower):
                     in_table = True
                     continue
@@ -108,20 +90,13 @@ if archivo_pdf is not None:
         
         for data in transacciones_lista:
             texto_trx_completo = " ".join(data['texto_lineas'])
-            texto_trx_limpio = limpiar_texto(texto_trx_completo)
             
             contiene_pdm = 0
             
-            # 1. Validación por Códigos
+            # Validación Única y Estricta por Códigos (SKU)
             codigos_en_boleta = set(re.findall(r'\b\d{7,9}\b', texto_trx_completo))
             if len(codigos_en_boleta.intersection(CODIGOS_PDM)) > 0:
                 contiene_pdm = 1
-            else:
-                # 2. Validación de Respaldo por Texto
-                for palabras in PALABRAS_CLAVE_PDM:
-                    if all(palabra in texto_trx_limpio for palabra in palabras):
-                        contiene_pdm = 1
-                        break 
             
             cod_vendedor = data['vendedor']
             nombre_vendedor = NOMBRES_VENDEDORES.get(cod_vendedor, cod_vendedor)
