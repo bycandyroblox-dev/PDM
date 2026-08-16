@@ -4,25 +4,23 @@ import pdfplumber
 import re
 import io
 
-# Configuración de la página
 st.set_page_config(page_title="Procesador PDM Tambo", layout="wide")
 st.title("Procesador de Ventas PDM")
 st.write("Sube el reporte de caja (PDF) para extraer los datos y descargar el Excel.")
 
-# Diccionario de vendedores
+
 NOMBRES_VENDEDORES = {
     "T72758473": "Britney",
     "T70729978": "Jhony",
     "T70962854": "Lucia"
 }
 
-# ESCÁNER ÚNICO: Códigos exactos de SKU
 CODIGOS_PDM = {
     "1002403", "1000986", "1006886", "1010945", "1010944",
     "1016699", "1014585", "1005799", "1005644", "1000918",
     "1001529", "1007039", "1001613", "1004275", "400150017",
     "1010148", "1016708", "1007474", "1004598", "1010150",
-    "1006684" # Oreo regular (108gr) incluida
+    "1006684" 
 }
 
 archivo_pdf = st.file_uploader("Sube tu archivo de Reporte (PDF)", type=["pdf"])
@@ -48,7 +46,6 @@ if archivo_pdf is not None:
             for linea in texto.split('\n'):
                 linea_lower = linea.lower()
                 
-                # Detectamos dónde empieza realmente la tabla
                 if "trns" in linea_lower and ("art" in linea_lower or "desc" in linea_lower):
                     in_table = True
                     continue
@@ -56,7 +53,6 @@ if archivo_pdf is not None:
                 if not in_table:
                     continue
                     
-                # Captura el número de Trns anclado a la izquierda
                 match_trx = re.match(r'^ {0,4}(\d{1,6})(?:\s+|$)', linea)
                 
                 if match_trx:
@@ -93,7 +89,6 @@ if archivo_pdf is not None:
             
             contiene_pdm = 0
             
-            # Validación Única y Estricta por Códigos (SKU)
             codigos_en_boleta = set(re.findall(r'\b\d{7,9}\b', texto_trx_completo))
             if len(codigos_en_boleta.intersection(CODIGOS_PDM)) > 0:
                 contiene_pdm = 1
