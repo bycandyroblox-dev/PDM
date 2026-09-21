@@ -6,9 +6,6 @@ import pandas as pd
 import pdfplumber
 import streamlit as st
 
-# ==============================================================================
-# CONFIGURACIÓN DE PÁGINA & ESTILOS
-# ==============================================================================
 st.set_page_config(
     page_title="Control PDM Tambo | Dashboard & Reportes",
     page_icon="🛒",
@@ -35,9 +32,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ==============================================================================
-# CONFIGURACIÓN PREDETERMINADA
-# ==============================================================================
 DEFAULT_CODIGOS_PDM: List[str] = [
     "1006666", "1011895", "1005645", "1001529", "1007147",
     "1010150", "1004597", "1007474", "400725017", "1000972",
@@ -46,9 +40,6 @@ DEFAULT_CODIGOS_PDM: List[str] = [
     "1016105"
 ]
 
-# ==============================================================================
-# BARRA LATERAL: PARÁMETROS OPERATIVOS
-# ==============================================================================
 with st.sidebar:
     st.header("⚙️ Parámetros Operativos")
     
@@ -64,9 +55,6 @@ with st.sidebar:
         for c in re.split(r'[\n,]+', pdm_input) if c.strip()
     }
 
-# ==============================================================================
-# NÚCLEO DE PROCESAMIENTO (MOTOR PDF)
-# ==============================================================================
 def parse_pdf_report(
     uploaded_file, 
     codigos_pdm: Set[str]
@@ -135,7 +123,6 @@ def parse_pdf_report(
     if not transacciones_lista:
         return pd.DataFrame(), pd.DataFrame(), fecha_reporte, {}
 
-    # Procesar transacciones individuales y contar PDM
     datos_boletas = []
     for data in transacciones_lista:
         texto_completo = " ".join(data["texto_lineas"])
@@ -147,7 +134,6 @@ def parse_pdf_report(
         for sku in pdms_en_boleta:
             conteo_skus_pdm[sku] = conteo_skus_pdm.get(sku, 0) + 1
 
-        # Asignamos directamente el código del vendedor
         cod_vendedor = data["vendedor"]
 
         datos_boletas.append({
@@ -172,9 +158,6 @@ def parse_pdf_report(
 
     return df_boletas, df_vendedores, fecha_reporte, conteo_skus_pdm
 
-# ==============================================================================
-# GENERACIÓN DE EXCEL EJECUTIVO
-# ==============================================================================
 def create_excel_report(df_vendedores: pd.DataFrame, fecha_reporte: str) -> bytes:
     output = io.BytesIO()
     
@@ -245,9 +228,6 @@ def create_excel_report(df_vendedores: pd.DataFrame, fecha_reporte: str) -> byte
 
     return output.getvalue()
 
-# ==============================================================================
-# VISTA PRINCIPAL & CONTROLADOR
-# ==============================================================================
 st.title("📊 Control de Penetración de Ventas PDM")
 st.markdown("Carga el cierre/reporte de caja en PDF para auditar la efectividad por cajero y generar el consolidado de PDM.")
 
