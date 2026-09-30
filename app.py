@@ -8,8 +8,8 @@ st.set_page_config(
 )
 
 # 2. Título o encabezado (opcional, puedes cambiar el texto)
-st.title("C LEO")
-st.write(".")
+st.title("")
+st.write("")
 
 # 3. Reproductor de video preestablecido
 # AQUÍ DEBES PONER EL NOMBRE EXACTO DE TU ARCHIVO DE VIDEO
