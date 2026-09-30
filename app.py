@@ -3,7 +3,7 @@ import streamlit as st
 # 1. Configuración de la página
 st.set_page_config(
     page_title="Mi Video",
-    page_icon="🎬",
+    page_icon="🛒",
     layout="centered" # Mantiene el video centrado y con un buen tamaño
 )
 
