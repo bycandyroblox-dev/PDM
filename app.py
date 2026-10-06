@@ -228,8 +228,8 @@ def create_excel_report(df_vendedores: pd.DataFrame, fecha_reporte: str) -> byte
 
     return output.getvalue()
 
-st.title("📊 Control de Penetración de Ventas PDM")
-st.markdown("Carga el cierre/reporte de caja en PDF para auditar la efectividad por cajero y generar el consolidado de PDM.")
+st.title("📊PDM")
+st.markdown("Carga el reporte de venta diaria PDF para generar el consolidado de PDM.")
 
 archivo_pdf = st.file_uploader("Arrastra o selecciona el archivo PDF de caja:", type=["pdf"])
 
